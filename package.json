@@ -7,7 +7,7 @@
   "engines": { "node": ">=20.0.0" },
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
     "lint": "tsc -p tsconfig.test.json --noEmit",
