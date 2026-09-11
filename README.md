@@ -9,7 +9,9 @@ The point is not to force a winner. It makes differences in tool context, tokens
 
 ## Run locally
 
-Start the Banking Demo service repository first. It provides the Banking, Fraud, and Support services plus their MCP servers.
+Start the [Fabric Banking Demo service monorepo](https://github.com/Postman-Devrel/Fabric-Banking-Demo) first. It exposes the Banking, Fraud, and Support REST APIs, along with the Banking and Support MCP servers.
+
+The **Direct** lane connects to those services itself. The **Fabric** lane reaches the same services through Fabric Gateway, using Fabric-held upstream credentials.
 
 Then, in this repository:
 
