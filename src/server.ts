@@ -11,7 +11,7 @@ const reports = new ReportStore(config.reportDir, config.maxReports);
 const orchestrator = new Orchestrator(config, models, reports);
 const server = createServer(createApp(config, orchestrator));
 
-server.listen(config.port, '127.0.0.1', () => {
+server.listen(config.port, '0.0.0.0', () => {
   console.log(`Fabric Gateway Showcase listening on http://127.0.0.1:${config.port}`);
 });
 
