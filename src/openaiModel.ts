@@ -43,7 +43,7 @@ export class OpenAIResponsesModel implements ModelClient {
       authMode: ModelAuthMode;
     }
   ) {
-    const canConnect = Boolean(connection.baseUrl) && (connection.authMode !== 'bearer' || Boolean(connection.apiKey));
+    const canConnect = Boolean(connection.baseUrl) && (connection.authMode === 'none' || Boolean(connection.apiKey));
     if (canConnect) {
       const connectionFetch: typeof fetch = (input, init = {}) => {
         const headers = new Headers(input instanceof Request ? input.headers : undefined);
@@ -76,9 +76,14 @@ export class OpenAIResponsesModel implements ModelClient {
           body: '{}'
         });
         const ready = response.ok || [400, 405, 422].includes(response.status);
+        const gatewayKeyRejected = this.connection.authMode === 'gateway-key' && response.status === 401;
         return {
           id: this.connection.id, label: this.connection.label, ready, required: true,
-          detail: ready ? `Responses route reachable (HTTP ${response.status})` : `Responses route returned HTTP ${response.status}`,
+          detail: ready
+            ? `Responses route reachable (HTTP ${response.status})`
+            : gatewayKeyRejected
+              ? 'Fabric rejected OPENAI_API_KEY sent as X-Gateway-Key (HTTP 401)'
+              : `Responses route returned HTTP ${response.status}`,
           latencyMs: Math.round(performance.now() - started)
         };
       }
@@ -158,10 +163,14 @@ export function directResponsesModel(config: AppConfig): OpenAIResponsesModel {
   const directUsesFabric = !directUsesOpenAi
     && (normalizedUrl(config.openAiBaseUrl) === normalizedUrl(config.fabricLlmUrl) || isFabricGatewayUrl(config.openAiBaseUrl));
   return new OpenAIResponsesModel(config, {
-    id: 'direct-model', label: directUsesOpenAi ? 'Direct OpenAI model' : 'Direct model route',
+    id: 'direct-model', label: directUsesOpenAi ? 'Direct OpenAI model' : directUsesFabric ? 'Direct Fabric model route' : 'Direct model route',
     apiKey: directUsesOpenAi || directUsesFabric ? config.openAiApiKey : undefined,
     baseUrl: config.openAiBaseUrl,
-    requiredConfiguration: directUsesOpenAi || directUsesFabric ? 'OPENAI_API_KEY' : 'OPENAI_BASE_URL',
+    requiredConfiguration: directUsesOpenAi
+      ? 'OPENAI_API_KEY'
+      : directUsesFabric
+        ? 'OPENAI_API_KEY (a Fabric gateway key for this Direct route)'
+        : 'OPENAI_BASE_URL',
     authMode: directUsesOpenAi ? 'bearer' : directUsesFabric ? 'gateway-key' : 'none'
   });
 }

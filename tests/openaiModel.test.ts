@@ -58,4 +58,23 @@ describe('Fabric Responses routing', () => {
       url: 'http://fabric.test/openai/v1/responses', authorization: null, gatewayKey: 'direct-fabric-key'
     }]);
   });
+
+  it('reports a missing Direct key instead of calling Fabric with an undefined gateway key', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const config = testConfig({ openAiBaseUrl: 'http://fabric.test/openai/v1', openAiApiKey: undefined });
+    const result = await directResponsesModel(config).preflight();
+
+    expect(result).toMatchObject({ ready: false, detail: 'OPENAI_API_KEY (a Fabric gateway key for this Direct route) is not configured' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('makes a rejected Direct Fabric key actionable in preflight', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: { message: 'invalid gateway key' } }, { status: 401 })));
+
+    const result = await directResponsesModel(testConfig({ openAiBaseUrl: 'http://fabric.test/openai/v1', openAiApiKey: 'rejected-key' })).preflight();
+
+    expect(result).toMatchObject({ ready: false, detail: 'Fabric rejected OPENAI_API_KEY sent as X-Gateway-Key (HTTP 401)' });
+  });
 });
