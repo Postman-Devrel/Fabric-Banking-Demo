@@ -41,7 +41,7 @@ describe('Fabric Responses routing', () => {
     expect(calls.every(call => !call.url.startsWith('https://api.openai.test'))).toBe(true);
   });
 
-  it('does not require an OpenAI key when the Direct model URL is the configured Fabric route', async () => {
+  it('uses the Direct OpenAI key as the Fabric gateway key when the Direct model URL targets Fabric', async () => {
     const calls: Array<{ url: string; authorization: string | null; gatewayKey: string | null }> = [];
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
@@ -50,12 +50,12 @@ describe('Fabric Responses routing', () => {
       return Response.json({ error: { message: 'model is required' } }, { status: 400 });
     }));
 
-    const config = testConfig({ openAiBaseUrl: 'http://fabric.test/openai/v1/responses', openAiApiKey: undefined });
+    const config = testConfig({ openAiBaseUrl: 'http://fabric.test/openai/v1/responses', openAiApiKey: 'direct-fabric-key' });
     const model = directResponsesModel(config);
     expect((await model.preflight()).ready).toBe(true);
 
     expect(calls).toEqual([{
-      url: 'http://fabric.test/openai/v1/responses', authorization: null, gatewayKey: 'fabric-key'
+      url: 'http://fabric.test/openai/v1/responses', authorization: null, gatewayKey: 'direct-fabric-key'
     }]);
   });
 });

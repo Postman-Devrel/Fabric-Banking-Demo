@@ -156,13 +156,12 @@ export class OpenAIResponsesModel implements ModelClient {
 export function directResponsesModel(config: AppConfig): OpenAIResponsesModel {
   const directUsesOpenAi = isOfficialOpenAiUrl(config.openAiBaseUrl);
   const directUsesFabric = !directUsesOpenAi
-    && (normalizedUrl(config.openAiBaseUrl) === normalizedUrl(config.fabricLlmUrl) || isFabricGatewayUrl(config.openAiBaseUrl))
-    && Boolean(config.fabricApiKey);
+    && (normalizedUrl(config.openAiBaseUrl) === normalizedUrl(config.fabricLlmUrl) || isFabricGatewayUrl(config.openAiBaseUrl));
   return new OpenAIResponsesModel(config, {
     id: 'direct-model', label: directUsesOpenAi ? 'Direct OpenAI model' : 'Direct model route',
-    apiKey: directUsesOpenAi ? config.openAiApiKey : directUsesFabric ? config.fabricApiKey : undefined,
+    apiKey: directUsesOpenAi || directUsesFabric ? config.openAiApiKey : undefined,
     baseUrl: config.openAiBaseUrl,
-    requiredConfiguration: directUsesOpenAi ? 'OPENAI_API_KEY' : 'OPENAI_BASE_URL',
+    requiredConfiguration: directUsesOpenAi || directUsesFabric ? 'OPENAI_API_KEY' : 'OPENAI_BASE_URL',
     authMode: directUsesOpenAi ? 'bearer' : directUsesFabric ? 'gateway-key' : 'none'
   });
 }
