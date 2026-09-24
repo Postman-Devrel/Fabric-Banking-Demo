@@ -50,7 +50,7 @@ describe('Fabric Responses routing', () => {
       return Response.json({ error: { message: 'model is required' } }, { status: 400 });
     }));
 
-    const config = testConfig({ openAiBaseUrl: 'http://fabric.test/openai/v1', openAiApiKey: undefined });
+    const config = testConfig({ openAiBaseUrl: 'http://fabric.test/openai/v1/responses', openAiApiKey: undefined });
     const model = directResponsesModel(config);
     expect((await model.preflight()).ready).toBe(true);
 

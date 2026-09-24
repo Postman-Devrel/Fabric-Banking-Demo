@@ -16,7 +16,17 @@ function isOfficialOpenAiUrl(baseUrl: string | undefined): boolean {
 }
 
 function normalizedUrl(value: string | undefined): string | undefined {
-  return value?.replace(/\/+$/, '');
+  const normalized = value?.replace(/\/+$/, '');
+  return normalized?.endsWith('/responses') ? normalized.slice(0, -'/responses'.length) : normalized;
+}
+
+function isFabricGatewayUrl(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false;
+  try {
+    return new URL(baseUrl).hostname.endsWith('.fabricgateway.ai');
+  } catch {
+    return false;
+  }
 }
 
 export class OpenAIResponsesModel implements ModelClient {
@@ -44,7 +54,7 @@ export class OpenAIResponsesModel implements ModelClient {
       };
       this.client = new OpenAI({
         apiKey: connection.authMode === 'bearer' ? connection.apiKey! : 'no-api-key',
-        baseURL: connection.baseUrl,
+        baseURL: normalizedUrl(connection.baseUrl),
         maxRetries: 0,
         ...(connection.authMode === 'bearer' ? {} : { fetch: connectionFetch })
       });
@@ -56,7 +66,7 @@ export class OpenAIResponsesModel implements ModelClient {
     const started = performance.now();
     try {
       if (this.connection.authMode !== 'bearer') {
-        const response = await fetch(`${this.connection.baseUrl!.replace(/\/$/, '')}/responses`, {
+        const response = await fetch(`${normalizedUrl(this.connection.baseUrl)!}/responses`, {
           method: 'POST',
           ...(signal ? { signal } : {}),
           headers: {
@@ -125,7 +135,7 @@ export class OpenAIResponsesModel implements ModelClient {
   async countInputTokens(request: Omit<ModelTurnRequest, 'signal'>, signal: AbortSignal): Promise<number | null> {
     if (!this.connection.baseUrl || (this.connection.authMode === 'bearer' && !this.connection.apiKey)) return null;
     try {
-      const response = await fetch(`${this.connection.baseUrl.replace(/\/$/, '')}/responses/input_tokens`, {
+      const response = await fetch(`${normalizedUrl(this.connection.baseUrl)!}/responses/input_tokens`, {
         method: 'POST', signal,
         headers: this.connection.authMode === 'gateway-key'
           ? { 'x-gateway-key': this.connection.apiKey!, 'content-type': 'application/json' }
@@ -146,7 +156,7 @@ export class OpenAIResponsesModel implements ModelClient {
 export function directResponsesModel(config: AppConfig): OpenAIResponsesModel {
   const directUsesOpenAi = isOfficialOpenAiUrl(config.openAiBaseUrl);
   const directUsesFabric = !directUsesOpenAi
-    && normalizedUrl(config.openAiBaseUrl) === normalizedUrl(config.fabricLlmUrl)
+    && (normalizedUrl(config.openAiBaseUrl) === normalizedUrl(config.fabricLlmUrl) || isFabricGatewayUrl(config.openAiBaseUrl))
     && Boolean(config.fabricApiKey);
   return new OpenAIResponsesModel(config, {
     id: 'direct-model', label: directUsesOpenAi ? 'Direct OpenAI model' : 'Direct model route',
