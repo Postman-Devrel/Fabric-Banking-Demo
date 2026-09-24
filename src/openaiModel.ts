@@ -4,6 +4,21 @@ import type { AppConfig } from './config.js';
 import type { ModelClient, ModelTurnRequest, ModelTurnResult, PreflightCheck } from './types.js';
 import { FINAL_RESULT_SCHEMA } from './scenario.js';
 
+type ModelAuthMode = 'bearer' | 'gateway-key' | 'none';
+
+function isOfficialOpenAiUrl(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false;
+  try {
+    return new URL(baseUrl).hostname === 'api.openai.com';
+  } catch {
+    return false;
+  }
+}
+
+function normalizedUrl(value: string | undefined): string | undefined {
+  return value?.replace(/\/+$/, '');
+}
+
 export class OpenAIResponsesModel implements ModelClient {
   private readonly client?: OpenAI;
 
@@ -15,22 +30,23 @@ export class OpenAIResponsesModel implements ModelClient {
       apiKey: string | undefined;
       baseUrl: string | undefined;
       requiredConfiguration: string;
-      authMode: 'bearer' | 'gateway-key';
+      authMode: ModelAuthMode;
     }
   ) {
-    if (connection.apiKey && connection.baseUrl) {
-      const gatewayFetch: typeof fetch = (input, init = {}) => {
+    const canConnect = Boolean(connection.baseUrl) && (connection.authMode !== 'bearer' || Boolean(connection.apiKey));
+    if (canConnect) {
+      const connectionFetch: typeof fetch = (input, init = {}) => {
         const headers = new Headers(input instanceof Request ? input.headers : undefined);
         new Headers(init.headers).forEach((value, name) => headers.set(name, value));
         headers.delete('authorization');
-        headers.set('x-gateway-key', connection.apiKey!);
+        if (connection.authMode === 'gateway-key') headers.set('x-gateway-key', connection.apiKey!);
         return fetch(input, { ...init, headers });
       };
       this.client = new OpenAI({
-        apiKey: connection.authMode === 'bearer' ? connection.apiKey : 'fabric-gateway',
+        apiKey: connection.authMode === 'bearer' ? connection.apiKey! : 'no-api-key',
         baseURL: connection.baseUrl,
         maxRetries: 0,
-        ...(connection.authMode === 'gateway-key' ? { fetch: gatewayFetch } : {})
+        ...(connection.authMode === 'bearer' ? {} : { fetch: connectionFetch })
       });
     }
   }
@@ -39,11 +55,14 @@ export class OpenAIResponsesModel implements ModelClient {
     if (!this.client) return { id: this.connection.id, label: this.connection.label, ready: false, required: true, detail: `${this.connection.requiredConfiguration} is not configured` };
     const started = performance.now();
     try {
-      if (this.connection.authMode === 'gateway-key') {
+      if (this.connection.authMode !== 'bearer') {
         const response = await fetch(`${this.connection.baseUrl!.replace(/\/$/, '')}/responses`, {
           method: 'POST',
           ...(signal ? { signal } : {}),
-          headers: { 'x-gateway-key': this.connection.apiKey!, 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            ...(this.connection.authMode === 'gateway-key' ? { 'x-gateway-key': this.connection.apiKey! } : {})
+          },
           body: '{}'
         });
         const ready = response.ok || [400, 405, 422].includes(response.status);
@@ -104,13 +123,15 @@ export class OpenAIResponsesModel implements ModelClient {
   }
 
   async countInputTokens(request: Omit<ModelTurnRequest, 'signal'>, signal: AbortSignal): Promise<number | null> {
-    if (!this.connection.apiKey || !this.connection.baseUrl) return null;
+    if (!this.connection.baseUrl || (this.connection.authMode === 'bearer' && !this.connection.apiKey)) return null;
     try {
       const response = await fetch(`${this.connection.baseUrl.replace(/\/$/, '')}/responses/input_tokens`, {
         method: 'POST', signal,
         headers: this.connection.authMode === 'gateway-key'
-          ? { 'x-gateway-key': this.connection.apiKey, 'content-type': 'application/json' }
-          : { authorization: `Bearer ${this.connection.apiKey}`, 'content-type': 'application/json' },
+          ? { 'x-gateway-key': this.connection.apiKey!, 'content-type': 'application/json' }
+          : this.connection.authMode === 'bearer'
+            ? { authorization: `Bearer ${this.connection.apiKey!}`, 'content-type': 'application/json' }
+            : { 'content-type': 'application/json' },
         body: JSON.stringify({ model: request.model, instructions: request.instructions, input: request.input, tools: request.tools })
       });
       if (!response.ok) return null;
@@ -123,9 +144,16 @@ export class OpenAIResponsesModel implements ModelClient {
 }
 
 export function directResponsesModel(config: AppConfig): OpenAIResponsesModel {
+  const directUsesOpenAi = isOfficialOpenAiUrl(config.openAiBaseUrl);
+  const directUsesFabric = !directUsesOpenAi
+    && normalizedUrl(config.openAiBaseUrl) === normalizedUrl(config.fabricLlmUrl)
+    && Boolean(config.fabricApiKey);
   return new OpenAIResponsesModel(config, {
-    id: 'direct-model', label: 'Direct OpenAI model', apiKey: config.openAiApiKey,
-    baseUrl: config.openAiBaseUrl, requiredConfiguration: 'OPENAI_API_KEY', authMode: 'bearer'
+    id: 'direct-model', label: directUsesOpenAi ? 'Direct OpenAI model' : 'Direct model route',
+    apiKey: directUsesOpenAi ? config.openAiApiKey : directUsesFabric ? config.fabricApiKey : undefined,
+    baseUrl: config.openAiBaseUrl,
+    requiredConfiguration: directUsesOpenAi ? 'OPENAI_API_KEY' : 'OPENAI_BASE_URL',
+    authMode: directUsesOpenAi ? 'bearer' : directUsesFabric ? 'gateway-key' : 'none'
   });
 }
 
